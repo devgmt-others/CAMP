@@ -179,7 +179,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
 .ledger-tbl td input:focus,.ledger-tbl td select:focus{
   background:#EAF5FF;border-radius:3px;}
 .ledger-tbl td.inc input{color:var(--teal);text-align:right;}
-.ledger-tbl td.exp input{color:var(--red);text-align:right);}
+.ledger-tbl td.exp input{color:var(--red);text-align:right;}
 .ledger-tbl td.bal{color:var(--navy);font-weight:700;text-align:right;
   padding-right:6px;}
 /* number 스피너 제거 */
@@ -1611,8 +1611,8 @@ body{font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-seri
 </style>
 </head><body>
 ${bodyInner}
-<script>window.onload=function(){window.print();};<\/script>
-</body></html>`;
+<script>window.onload=function(){window.print();};</scrip${'t'}>
+</bo${'dy'}></html>`;
 }
 
 function openPrint(html, title){
@@ -2882,7 +2882,7 @@ function printBill(){
 
   var blob = new Blob(
     ['<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>청구서</title></head>'
-     +'<body>'+body+'<script>window.onload=function(){window.print();};<\/script></body></html>'],
+     +'<body>'+body+'<script>window.onload=function(){window.print();};</scr'+'ipt></bo'+'dy></html>'],
     {type:'text/html;charset=utf-8'}
   );
   var url = URL.createObjectURL(blob);
@@ -3030,7 +3030,7 @@ function printResolution(id){
   var title = (isInc?'수입':'지출')+'결의서';
   var blob = new Blob(
     ['<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'+title+'</title></head>'
-     +'<body>'+body+'<script>window.onload=function(){window.print();};<\/script></body></html>'],
+     +'<body>'+body+'<script>window.onload=function(){window.print();};</scr'+'ipt></bo'+'dy></html>'],
     {type:'text/html;charset=utf-8'}
   );
   var url = URL.createObjectURL(blob);
