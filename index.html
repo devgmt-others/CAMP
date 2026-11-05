@@ -983,13 +983,13 @@ async function requestPasswordReset(){
   if(!supabaseClient) return report('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
   if(requestPasswordReset.pending) return;
   requestPasswordReset.pending = true;
-  report('재설정 메일을 요청하고 있습니다…', true);
+  report('재설정 메일을 전송하고 있습니다…', true);
   try{
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + '/?type=recovery'
     });
     if(error) throw error;
-    report('비밀번호 재설정 메일을 요청했습니다. 이메일과 스팸함을 확인하세요.', true);
+    report('비밀번호 재설정 메일을 전송했습니다. 이메일과 스팸함을 확인하세요.', true);
   }catch(error){
     const message = error.message || '';
     if(error.code === 'over_email_send_rate_limit' || /email rate limit/i.test(message)){
@@ -997,7 +997,7 @@ async function requestPasswordReset(){
     }else if(error.status === 429){
       report('요청이 너무 많습니다. 잠시 기다린 뒤 다시 시도해 주세요.');
     }else{
-      report('재설정 메일 요청에 실패했습니다: ' + (message || '네트워크 연결을 확인해 주세요.'));
+      report('재설정 메일 전송에 실패했습니다: ' + (message || '네트워크 연결을 확인해 주세요.'));
     }
   }finally{
     requestPasswordReset.pending = false;
