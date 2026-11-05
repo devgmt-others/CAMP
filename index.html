@@ -23,7 +23,7 @@ body{font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-seri
 /* ══════════════════════════════════════════
    레이아웃
 ══════════════════════════════════════════ */
-#app{display:flex;height:100vh;overflow:hidden;}
+#app{display:none;height:100vh;overflow:hidden;}
 #sidebar{width:210px;min-width:210px;background:var(--navy);
   display:flex;flex-direction:column;overflow-y:auto;}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
@@ -354,35 +354,20 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
           </div>
         </div>
       </div>
-      <!-- 비밀번호 설정 -->
+      <!-- 계정 관리 -->
       <div class="card">
         <div class="card-header">
-          <h3>🔒 비밀번호 설정</h3>
-          <span class="badge badge-a">프로그램 실행 시 비밀번호 잠금</span>
+          <h3>👤 계정 관리</h3>
         </div>
         <div class="card-body">
-          <div class="fgrid" style="max-width:600px;">
-            <div class="fg">
-              <label>현재 비밀번호 (변경 시 입력)</label>
-              <input type="password" id="s-pw-cur" placeholder="현재 비밀번호">
-            </div>
-            <div class="fg">
-              <label>새 비밀번호</label>
-              <input type="password" id="s-pw-new" placeholder="새 비밀번호 (4자 이상)">
-            </div>
-            <div class="fg">
-              <label>새 비밀번호 확인</label>
-              <input type="password" id="s-pw-chk" placeholder="비밀번호 재입력">
-            </div>
-          </div>
           <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-primary btn-sm" onclick="savePw()">🔒 비밀번호 저장</button>
-            <button class="btn btn-red btn-sm" onclick="removePw()">🔓 비밀번호 해제</button>
-            <span id="pw-status" style="font-size:11px;color:var(--muted);"></span>
+            <span id="account-email" style="font-size:12px;color:var(--gray);"></span>
+            <button class="btn btn-outline btn-sm" onclick="requestPasswordReset()">비밀번호 재설정 메일</button>
+            <button class="btn btn-red btn-sm" onclick="doLogout()">로그아웃</button>
           </div>
+          <div id="account-auth-status" role="status" aria-live="polite" style="margin-top:10px;font-size:12px;"></div>
           <div class="info-box" style="margin-top:12px;margin-bottom:0;">
-            비밀번호를 설정하면 프로그램 실행 시 비밀번호 입력 화면이 나타납니다.
-            분실 시 복구가 어려우니 반드시 기억해 두세요.
+            비밀번호를 잊은 경우 재설정 메일을 이용하세요.
           </div>
         </div>
       </div>
@@ -672,8 +657,23 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 </div><!-- /main -->
 </div><!-- /app -->
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 'use strict';
+// 회계 데이터는 로그인 계정별로 분리합니다. 기존 공용 데이터는 자동으로 가져오지 않습니다.
+let activeAccountId = null;
+const localStorage = {
+  prefix(){
+    if(!activeAccountId) throw new Error('로그인이 필요합니다.');
+    return 'camp_user_' + activeAccountId + ':';
+  },
+  getItem(key){ return window.localStorage.getItem(this.prefix() + key); },
+  setItem(key, value){ window.localStorage.setItem(this.prefix() + key, value); },
+  removeItem(key){ window.localStorage.removeItem(this.prefix() + key); },
+  keys(){ const p=this.prefix(); return Object.keys(window.localStorage).filter(k=>k.startsWith(p)).map(k=>k.slice(p.length)); },
+  key(index){ return this.keys()[index] ?? null; },
+  get length(){ return this.keys().length; }
+};
 // ════════════════════════════════════════════
 //  데이터 저장소
 // ════════════════════════════════════════════
@@ -851,132 +851,199 @@ function updateFolderUI(name){ /* 미사용 */ }
 
 // 폴더 선택 (최초 1회 또는 변경 시)
 // ════════════════════════════════════════════
-//  비밀번호 관리
+//  Supabase Auth
 // ════════════════════════════════════════════
-
-// 비밀번호 해시 (간단한 SHA-256 방식)
-async function hashPw(pw){
-  const buf = await crypto.subtle.digest('SHA-256',
-    new TextEncoder().encode(pw + 'camp_salt_2026'));
-  return Array.from(new Uint8Array(buf))
-    .map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-// 비밀번호 저장
-async function savePw(){
-  const cur = document.getElementById('s-pw-cur').value;
-  const nw  = document.getElementById('s-pw-new').value;
-  const chk = document.getElementById('s-pw-chk').value;
-  const st  = document.getElementById('pw-status');
-
-  const stored = localStorage.getItem('camp_pw_hash');
-
-  // 기존 비밀번호 확인
-  if(stored){
-    if(!cur){ st.textContent='현재 비밀번호를 입력하세요.'; st.style.color='var(--red)'; return; }
-    const curHash = await hashPw(cur);
-    if(curHash !== stored){ st.textContent='현재 비밀번호가 틀립니다.'; st.style.color='var(--red)'; return; }
-  }
-
-  if(nw.length < 4){ st.textContent='비밀번호는 4자 이상이어야 합니다.'; st.style.color='var(--red)'; return; }
-  if(nw !== chk)   { st.textContent='새 비밀번호가 일치하지 않습니다.'; st.style.color='var(--red)'; return; }
-
-  const hash = await hashPw(nw);
-  localStorage.setItem('camp_pw_hash', hash);
-  document.getElementById('s-pw-cur').value = '';
-  document.getElementById('s-pw-new').value = '';
-  document.getElementById('s-pw-chk').value = '';
-  st.textContent = '✅ 비밀번호가 설정되었습니다.';
-  st.style.color = 'var(--teal)';
-  toast('🔒 비밀번호가 설정되었습니다.');
-}
-
-// 비밀번호 해제
-async function removePw(){
-  const cur    = document.getElementById('s-pw-cur').value;
-  const stored = localStorage.getItem('camp_pw_hash');
-  const st     = document.getElementById('pw-status');
-
-  if(!stored){ st.textContent='설정된 비밀번호가 없습니다.'; st.style.color='var(--muted)'; return; }
-  if(!cur){ st.textContent='현재 비밀번호를 입력하세요.'; st.style.color='var(--red)'; return; }
-
-  const curHash = await hashPw(cur);
-  if(curHash !== stored){ st.textContent='비밀번호가 틀립니다.'; st.style.color='var(--red)'; return; }
-
-  localStorage.removeItem('camp_pw_hash');
-  document.getElementById('s-pw-cur').value = '';
-  st.textContent = '🔓 비밀번호가 해제되었습니다.';
-  st.style.color = 'var(--teal)';
-  toast('🔓 비밀번호가 해제되었습니다.');
-}
-
-// 로그인 화면 표시
-function showLoginScreen(){
-  const screen = document.getElementById('login-screen');
-  if(!screen) return;
-  const stored = localStorage.getItem('camp_pw_hash');
-  screen.style.display = 'flex';
-  if(!stored){
-    // 비밀번호 미설정: 힌트 + 건너뛰기 표시
-    document.getElementById('login-hint').style.display = 'block';
-    document.getElementById('login-skip').style.display = 'block';
-  } else {
-    document.getElementById('login-hint').style.display = 'none';
-    document.getElementById('login-skip').style.display = 'none';
-  }
-  setTimeout(()=>{ const el=document.getElementById('login-pw'); if(el) el.focus(); },200);
-}
-
-// 로그인 시도
-async function doLogin(){
-  const pw     = document.getElementById('login-pw').value;
-  const stored = localStorage.getItem('camp_pw_hash');
-  const errEl  = document.getElementById('login-err');
-
-  if(!stored){
-    // 비밀번호 미설정: 빈 칸이면 그냥 진입
-    hideLoginScreen(); return;
-  }
-  if(!pw){ errEl.textContent = '비밀번호를 입력하세요.'; return; }
-
-  const hash = await hashPw(pw);
-  if(hash === stored){
-    hideLoginScreen();
-  } else {
-    errEl.textContent = '비밀번호가 틀립니다. 다시 입력해 주세요.';
-    document.getElementById('login-pw').value = '';
-    document.getElementById('login-pw').focus();
-    // 틀릴 때 흔들기 효과
-    const card = document.getElementById('login-pw').closest('div[style*="background:#fff"]');
-    if(card){ card.style.animation='shake .3s ease'; setTimeout(()=>card.style.animation='',400); }
-  }
-}
-
-// 비밀번호 없이 진입
-function skipLogin(){
-  hideLoginScreen();
-}
-
-// 로그인 화면 숨기기 + 앱 초기화 실행
+let supabaseClient = null;
 let _appInited = false;
-async function hideLoginScreen(){
-  const screen = document.getElementById('login-screen');
-  if(screen) screen.style.display = 'none';
-  document.getElementById('login-pw').value = '';
-  document.getElementById('login-err').textContent = '';
 
+function setAuthMessage(message, type=''){
+  const el = document.getElementById('login-err');
+  el.textContent = message || '';
+  el.style.color = type === 'ok' ? '#16836d' : '#C0392B';
+}
+
+function showLoginScreen(){
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('auth-fields').style.display = 'block';
+  document.getElementById('login-submit').style.display = 'block';
+  document.getElementById('auth-links').style.display = 'flex';
+  document.getElementById('password-update-wrap').style.display = 'none';
+  setTimeout(()=>document.getElementById('login-email').focus(), 100);
+}
+
+function showPasswordUpdateForm(){
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('auth-fields').style.display = 'none';
+  document.getElementById('login-submit').style.display = 'none';
+  document.getElementById('auth-links').style.display = 'none';
+  document.getElementById('password-update-wrap').style.display = 'block';
+  setAuthMessage('새 비밀번호를 설정하세요.', 'ok');
+  setTimeout(()=>document.getElementById('new-password').focus(), 100);
+}
+
+async function showAuthenticatedApp(user){
+  if(activeAccountId && activeAccountId !== user.id){ window.location.reload(); return; }
+  activeAccountId = user.id;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('account-email').textContent = user.email || '';
   if(!_appInited){
     _appInited = true;
     await initApp();
   }
 }
 
-// 비밀번호 표시/숨기기 토글
+async function initSupabaseAuth(){
+  try{
+    const recoveryRequested = new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery'
+      || new URLSearchParams(window.location.search).get('type') === 'recovery';
+    const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+    // Live Server는 서버 함수를 실행하지 않으므로 공개 설정 파일을 사용합니다.
+    const res = await fetch(isLocal ? './supabase-public-config.json' : '/api/supabase-config', { cache:'no-store' });
+    const config = await res.json();
+    if(!res.ok) throw new Error(config.error || 'Supabase 연결 정보를 불러오지 못했습니다.');
+    if(!config.url || !config.publishableKey){
+      throw new Error(isLocal
+        ? '로컬 실행: supabase-public-config.json에 Supabase URL과 공개용 publishable 키를 입력하세요.'
+        : 'Vercel 프로젝트의 Supabase 환경변수를 확인하세요.');
+    }
+    supabaseClient = window.supabase.createClient(config.url, config.publishableKey);
+
+    const { data:{ session }, error } = await supabaseClient.auth.getSession();
+    if(error) throw error;
+    const isRecovery = new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery'
+      || new URLSearchParams(window.location.search).get('type') === 'recovery';
+    if(isRecovery || recoveryRequested) showPasswordUpdateForm();
+    else if(session?.user) await showAuthenticatedApp(session.user);
+    else showLoginScreen();
+
+    supabaseClient.auth.onAuthStateChange(async (event, session)=>{
+      if(event === 'PASSWORD_RECOVERY') return showPasswordUpdateForm();
+      if(event === 'SIGNED_OUT'){ window.location.reload(); return; }
+      if((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user){
+        await showAuthenticatedApp(session.user);
+      }
+    });
+  }catch(error){
+    showLoginScreen();
+    setAuthMessage(error.message || '인증 서비스를 준비하지 못했습니다. 관리자에게 문의해 주세요.');
+    console.error(error);
+  }
+}
+
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-pw').value;
+  if(!email || !password) return setAuthMessage('이메일과 비밀번호를 입력하세요.');
+  if(!supabaseClient) return setAuthMessage('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
+
+  setAuthMessage('');
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if(error){
+    setAuthMessage(error.message === 'Invalid login credentials'
+      ? '이메일 또는 비밀번호가 올바르지 않습니다.' : error.message);
+    return;
+  }
+}
+
+async function doSignup(){
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-pw').value;
+  const confirmation = document.getElementById('login-pw-confirm').value;
+  if(!email || !password || !confirmation) return setAuthMessage('이메일과 비밀번호, 비밀번호 확인을 입력하세요.');
+  if(password.length < 6) return setAuthMessage('비밀번호는 6자 이상으로 설정하세요.');
+  if(password !== confirmation) return setAuthMessage('비밀번호가 일치하지 않습니다.');
+  if(!supabaseClient) return setAuthMessage('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
+
+  setAuthMessage('');
+  const { data, error } = await supabaseClient.auth.signUp({
+    email, password, options:{ emailRedirectTo: window.location.origin }
+  });
+  if(error) return setAuthMessage(error.message);
+  if(data.session){
+    setAuthMessage('회원가입과 로그인이 완료되었습니다.', 'ok');
+  }else{
+    setAuthMessage('인증 메일을 보냈습니다. 이메일의 링크를 연 뒤 로그인하세요.', 'ok');
+  }
+}
+
+async function requestPasswordReset(){
+  const inApp = document.getElementById('app').style.display === 'flex';
+  const report = (message, ok=false)=>{
+    if(!inApp) return setAuthMessage(message, ok ? 'ok' : '');
+    const el = document.getElementById('account-auth-status');
+    el.textContent = message;
+    el.style.color = ok ? 'var(--teal)' : 'var(--red)';
+  };
+  const email = inApp ? document.getElementById('account-email').textContent.trim()
+    : document.getElementById('login-email').value.trim();
+  if(!email) return report('비밀번호를 재설정할 이메일을 먼저 입력하세요.');
+  if(!supabaseClient) return report('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
+  if(requestPasswordReset.pending) return;
+  requestPasswordReset.pending = true;
+  report('재설정 메일을 요청하고 있습니다…', true);
+  try{
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/?type=recovery'
+    });
+    if(error) throw error;
+    report('비밀번호 재설정 메일을 요청했습니다. 이메일과 스팸함을 확인하세요.', true);
+  }catch(error){
+    const message = error.message || '';
+    if(error.code === 'over_email_send_rate_limit' || /email rate limit/i.test(message)){
+      report('이메일 발송 한도를 초과했습니다.');
+    }else if(error.status === 429){
+      report('요청이 너무 많습니다. 잠시 기다린 뒤 다시 시도해 주세요.');
+    }else{
+      report('재설정 메일 요청에 실패했습니다: ' + (message || '네트워크 연결을 확인해 주세요.'));
+    }
+  }finally{
+    requestPasswordReset.pending = false;
+  }
+}
+
+async function doLogout(){
+  if(!supabaseClient) return;
+  const { error } = await supabaseClient.auth.signOut();
+  if(error) toast('로그아웃하지 못했습니다. 다시 시도하세요.','err');
+}
+
+async function updatePassword(){
+  const password = document.getElementById('new-password').value;
+  const confirmation = document.getElementById('new-password-confirm').value;
+  if(password.length < 6) return setAuthMessage('비밀번호는 6자 이상으로 설정하세요.');
+  if(password !== confirmation) return setAuthMessage('비밀번호가 일치하지 않습니다.');
+  if(!supabaseClient) return setAuthMessage('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
+  const { error } = await supabaseClient.auth.updateUser({ password });
+  if(error) return setAuthMessage(error.message);
+  history.replaceState({}, document.title, window.location.pathname);
+  setAuthMessage('비밀번호가 변경되었습니다.', 'ok');
+  setTimeout(async ()=>{
+    const { data:{ user } } = await supabaseClient.auth.getUser();
+    if(user) await showAuthenticatedApp(user);
+  }, 600);
+}
+
 function togglePw(){
   const inp = document.getElementById('login-pw');
   const eye = document.getElementById('pw-eye');
-  if(inp.type === 'password'){ inp.type='text';     eye.textContent='🙈'; }
-  else                       { inp.type='password'; eye.textContent='👁'; }
+  if(inp.type === 'password'){ inp.type='text'; eye.textContent='🙈'; }
+  else { inp.type='password'; eye.textContent='👁'; }
+}
+
+function toggleSignup(){
+  const wrap = document.getElementById('signup-confirm-wrap');
+  const button = document.getElementById('login-submit');
+  const toggle = document.getElementById('signup-toggle');
+  const isSignup = wrap.style.display !== 'none';
+  wrap.style.display = isSignup ? 'none' : 'block';
+  button.textContent = isSignup ? '로그인' : '회원가입';
+  button.onclick = isSignup ? doLogin : doSignup;
+  toggle.textContent = isSignup ? '회원가입' : '로그인으로 돌아가기';
+  document.getElementById('login-pw').autocomplete = isSignup ? 'current-password' : 'new-password';
+  setAuthMessage('');
 }
 
 
@@ -3179,7 +3246,7 @@ async function init(){
 
 async function initApp(){
   // 백업 폴더 핸들 복원 (권한 있으면 자동 연결)
-  await restoreBackupFolder();
+  // 공용으로 기억된 백업 폴더는 계정 간 노출 방지를 위해 자동 연결하지 않습니다.
   // 로그인 성공 후: 데이터 로드 및 화면 초기화
 
   await loadDB();
@@ -3201,7 +3268,7 @@ async function initApp(){
 
 // ── 페이지 로드 시 진입점 ──────────────────────────────────────
 window.addEventListener('load', function(){
-  showLoginScreen(); // 로그인 화면 표시 → 성공 후 init() 호출
+  initSupabaseAuth();
 });
 </script>
 
@@ -3222,15 +3289,28 @@ window.addEventListener('load', function(){
   </div>
 
   <!-- 로그인 카드 -->
-  <div style="background:#fff;border-radius:14px;padding:32px 36px;
+  <div id="login-card" style="background:#fff;border-radius:14px;padding:32px 36px;
     width:340px;box-shadow:0 16px 48px rgba(0,0,0,0.35);">
 
     <div style="font-size:16px;font-weight:700;color:#18283C;
-      margin-bottom:22px;text-align:center;">비밀번호를 입력하세요</div>
+      margin-bottom:8px;text-align:center;">로그인</div>
+    <!-- <div style="font-size:11px;color:#6B7C93;margin-bottom:22px;text-align:center;">
+      이메일 계정으로 안전하게 이용하세요</div> -->
+
+    <div id="auth-fields">
+    <div style="margin-bottom:10px;">
+      <input type="email" id="login-email"
+        placeholder="이메일"
+        autocomplete="email"
+        onkeydown="if(event.key==='Enter') doLogin()"
+        style="width:100%;border:1.5px solid #C9D8E8;border-radius:7px;
+          padding:11px 14px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;">
+    </div>
 
     <div style="position:relative;margin-bottom:14px;">
       <input type="password" id="login-pw"
         placeholder="비밀번호"
+        autocomplete="current-password"
         onkeydown="if(event.key==='Enter') doLogin()"
         style="width:100%;border:1.5px solid #C9D8E8;border-radius:7px;
           padding:11px 42px 11px 14px;font-size:14px;
@@ -3244,31 +3324,40 @@ window.addEventListener('load', function(){
           cursor:pointer;font-size:16px;color:#6B7C93;user-select:none;">👁</span>
     </div>
 
+    <div id="signup-confirm-wrap" style="display:none;margin-bottom:14px;">
+      <input type="password" id="login-pw-confirm"
+        placeholder="비밀번호 확인" autocomplete="new-password"
+        onkeydown="if(event.key==='Enter') doSignup()"
+        style="width:100%;border:1.5px solid #C9D8E8;border-radius:7px;
+          padding:11px 14px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;">
+    </div>
+    </div>
+
     <div id="login-err" style="color:#C0392B;font-size:11.5px;
       margin-bottom:10px;min-height:16px;text-align:center;"></div>
 
     <button onclick="doLogin()"
+      id="login-submit"
       style="width:100%;padding:11px;background:#1E3A5F;color:#fff;
         border:none;border-radius:7px;font-size:14px;font-weight:700;
         cursor:pointer;font-family:inherit;transition:background .15s;"
       onmouseover="this.style.background='#2E6DA4'"
       onmouseout="this.style.background='#1E3A5F'">로그인</button>
 
-    <!-- 비밀번호 미설정 시 안내 -->
-    <div id="login-hint" style="font-size:10.5px;color:#6B7C93;
-      text-align:center;margin-top:12px;display:none;">
-      ※ 초기설정에서 비밀번호를 등록하세요
+    <div id="auth-links" style="display:flex;justify-content:center;gap:12px;margin-top:14px;font-size:11px;">
+      <button id="signup-toggle" onclick="toggleSignup()" style="border:0;background:none;color:#2E6DA4;cursor:pointer;font-family:inherit;">회원가입</button>
+      <span style="color:#C8D8E8;">|</span>
+      <button onclick="requestPasswordReset()" style="border:0;background:none;color:#2E6DA4;cursor:pointer;font-family:inherit;">비밀번호를 잊으셨나요?</button>
     </div>
-  </div>
 
-  <!-- 비밀번호 없이 진입 버튼 (미설정 시만 표시) -->
-  <div id="login-skip" style="margin-top:16px;display:none;">
-    <button onclick="skipLogin()"
-      style="background:rgba(255,255,255,0.1);color:#A8C8E8;
-        border:1px solid rgba(255,255,255,0.2);border-radius:7px;
-        padding:8px 20px;font-size:12px;cursor:pointer;font-family:inherit;">
-      비밀번호 없이 진입
-    </button>
+    <div id="password-update-wrap" style="display:none;">
+      <input type="password" id="new-password" placeholder="새 비밀번호 (6자 이상)" autocomplete="new-password"
+        style="width:100%;border:1.5px solid #C9D8E8;border-radius:7px;padding:11px 14px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:10px;">
+      <input type="password" id="new-password-confirm" placeholder="새 비밀번호 확인" autocomplete="new-password"
+        onkeydown="if(event.key==='Enter') updatePassword()"
+        style="width:100%;border:1.5px solid #C9D8E8;border-radius:7px;padding:11px 14px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:14px;">
+      <button onclick="updatePassword()" style="width:100%;padding:11px;background:#1E3A5F;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">새 비밀번호 저장</button>
+    </div>
   </div>
 </div>
 </body>
