@@ -135,6 +135,36 @@ body{font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-seri
 /* 구분선 */
 hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
 
+/* 인증 결과: 제목과 다음 행동을 함께 보여주는 알림 카드 */
+.auth-notice{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:14px;
+  border:1px solid #F0C4BF;border-left:4px solid var(--red);border-radius:8px;
+  background:#FFF3F1;color:#96352B;text-align:left;}
+.auth-notice[hidden]{display:none;}
+.auth-notice.ok{background:#EDF9F4;border-color:#B6DFCF;border-left-color:#16836D;color:#12664F;}
+.auth-notice.info{background:#EFF6FF;border-color:#BCD5EF;border-left-color:var(--blue);color:var(--navy);}
+#login-submit:disabled{opacity:.75;cursor:wait;}
+#login-submit.is-loading::before{content:'';display:inline-block;width:13px;height:13px;
+  margin-right:8px;vertical-align:-2px;border:2px solid rgba(255,255,255,.4);
+  border-top-color:#fff;border-radius:50%;animation:auth-spin .7s linear infinite;}
+@keyframes auth-spin{to{transform:rotate(360deg);}}
+.auth-notice-icon{display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.85);font-size:17px;font-weight:800;}
+.auth-notice-title{display:block;font-size:13px;line-height:1.5;margin-bottom:4px;}
+.auth-notice-detail{font-size:12px;line-height:1.7;overflow-wrap:anywhere;}
+.auth-result{position:fixed;inset:0;margin:auto;width:min(420px,calc(100vw - 32px));
+  max-height:calc(100dvh - 32px);overflow:auto;padding:0;border:1px solid var(--border);
+  border-radius:16px;background:var(--white);color:var(--dark);
+  box-shadow:0 24px 70px rgba(13,31,48,.3);font-family:inherit;}
+.auth-result::backdrop{background:rgba(13,31,48,.6);backdrop-filter:blur(3px);}
+.auth-result-brand{padding:13px 24px;background:var(--navy);color:var(--white);
+  font-size:14px;font-weight:900;letter-spacing:3px;}
+.auth-result-body{padding:28px 26px 24px;text-align:center;}
+.auth-result-icon{display:flex;align-items:center;justify-content:center;width:56px;height:56px;
+  margin:0 auto 16px;border-radius:50%;background:#EDF9F4;color:#16836D;font-size:28px;}
+.auth-result h2{font-size:18px;line-height:1.5;color:var(--navy);margin-bottom:12px;}
+.auth-result p{font-size:13px;line-height:1.8;color:var(--gray);overflow-wrap:anywhere;white-space:pre-line;}
+.auth-result .btn{justify-content:center;width:100%;margin-top:24px;padding:11px;font-size:14px;}
+
 /* ══════════════════════════════════════════
    초기설정 - 과목 그리드
 ══════════════════════════════════════════ */
@@ -271,6 +301,15 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 <body>
 
 <div class="toast" id="toast"></div>
+<dialog id="auth-result-dialog" class="auth-result" aria-labelledby="auth-result-title" aria-describedby="auth-result-detail">
+  <div class="auth-result-brand">CAMP</div>
+  <div class="auth-result-body">
+    <div class="auth-result-icon" aria-hidden="true">✓</div>
+    <h2 id="auth-result-title"></h2>
+    <p id="auth-result-detail"></p>
+    <form method="dialog"><button class="btn btn-primary" autofocus>확인</button></form>
+  </div>
+</dialog>
 <div id="app">
 
 <!-- ════════ 사이드바 ════════ -->
@@ -379,7 +418,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
             <button class="btn btn-outline btn-sm" onclick="requestPasswordReset()">비밀번호 재설정</button>
             <button class="btn btn-red btn-sm" onclick="doLogout()">로그아웃</button>
           </div>
-          <div id="account-auth-status" role="status" aria-live="polite" style="margin-top:10px;font-size:12px;"></div>
+          <div id="account-auth-status" class="auth-notice" role="status" aria-live="polite" aria-atomic="true" hidden></div>
           <div class="info-box" style="margin-top:12px;margin-bottom:0;">
             비밀번호를 잊으신 경우, 비밀번호 재설정 버튼을 누르세요.
           </div>
@@ -943,13 +982,43 @@ async function loadAccountProfile(userId){
   return accountProfile;
 }
 
-function setAuthMessage(message, type=''){
-  const el = document.getElementById('login-err');
-  el.textContent = message || '';
-  el.style.color = type === 'ok' ? '#16836d' : '#C0392B';
+function renderAuthNotice(el, message, type='', title=''){
+  el.replaceChildren();
+  el.hidden = !message;
+  el.className = 'auth-notice' + (type === 'ok' ? ' ok' : type === 'info' ? ' info' : '');
+  if(!message) return;
+  const icon = document.createElement('span');
+  icon.className = 'auth-notice-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = type === 'ok' ? '✓' : type === 'info' ? 'i' : '!';
+  const body = document.createElement('div');
+  const heading = document.createElement('strong');
+  heading.className = 'auth-notice-title';
+  heading.textContent = title || (type === 'ok' ? '완료되었습니다' : type === 'info' ? '안내' : '확인해 주세요');
+  const detail = document.createElement('div');
+  detail.className = 'auth-notice-detail';
+  detail.textContent = message;
+  body.append(heading, detail);
+  el.append(icon, body);
+}
+
+function setAuthMessage(message, type='', title=''){
+  renderAuthNotice(document.getElementById('login-err'), message, type, title);
+}
+
+function showAuthResult(title, message){
+  const dialog = document.getElementById('auth-result-dialog');
+  document.getElementById('auth-result-title').textContent = title;
+  document.getElementById('auth-result-detail').textContent = message;
+  // 기본 dialog가 배경 클릭과 키보드 접근을 막고 포커스를 관리합니다.
+  return new Promise(resolve=>{
+    dialog.addEventListener('close', resolve, { once:true });
+    if(!dialog.open) dialog.showModal();
+  });
 }
 
 function showLoginScreen(){
+  document.getElementById('auth-title').textContent = document.getElementById('signup-confirm-wrap').style.display !== 'none' ? '회원가입' : '로그인';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('auth-fields').style.display = 'block';
@@ -960,6 +1029,7 @@ function showLoginScreen(){
 }
 
 function showPasswordUpdateForm(){
+  document.getElementById('auth-title').textContent = '새 비밀번호 설정';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('auth-fields').style.display = 'none';
@@ -1022,21 +1092,42 @@ async function initSupabaseAuth(){
 }
 
 async function doLogin(){
+  if(doLogin.pending || doSignup.pending) return;
+  if(document.getElementById('signup-confirm-wrap').style.display !== 'none') return doSignup();
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-pw').value;
   if(!email || !password) return setAuthMessage('이메일과 비밀번호를 입력하세요.');
   if(!supabaseClient) return setAuthMessage('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
 
-  setAuthMessage('');
-  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if(error){
+  const button = document.getElementById('login-submit');
+  const toggle = document.getElementById('signup-toggle');
+  doLogin.pending = true;
+  button.disabled = true;
+  toggle.disabled = true;
+  button.classList.add('is-loading');
+  button.setAttribute('aria-busy', 'true');
+  button.textContent = '로그인 중…';
+  setAuthMessage('계정을 확인하고 있습니다. 잠시만 기다려 주세요.', 'info', '로그인 중입니다');
+  try{
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if(error) throw error;
+    setAuthMessage('');
+  }catch(error){
     setAuthMessage(error.message === 'Invalid login credentials'
-      ? '이메일 또는 비밀번호가 올바르지 않습니다.' : error.message);
-    return;
+      ? '이메일 또는 비밀번호가 올바르지 않습니다.'
+      : error.message || '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+  }finally{
+    doLogin.pending = false;
+    button.disabled = false;
+    toggle.disabled = false;
+    button.classList.remove('is-loading');
+    button.removeAttribute('aria-busy');
+    button.textContent = '로그인';
   }
 }
 
 async function doSignup(){
+  if(doSignup.pending || doLogin.pending) return;
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-pw').value;
   const confirmation = document.getElementById('login-pw-confirm').value;
@@ -1045,25 +1136,43 @@ async function doSignup(){
   if(password !== confirmation) return setAuthMessage('비밀번호가 일치하지 않습니다.');
   if(!supabaseClient) return setAuthMessage('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
 
-  setAuthMessage('');
-  const { data, error } = await supabaseClient.auth.signUp({
-    email, password, options:{ emailRedirectTo: window.location.origin }
-  });
-  if(error) return setAuthMessage(error.message);
-  if(data.session){
-    setAuthMessage('회원가입과 로그인이 완료되었습니다.', 'ok');
-  }else{
-    setAuthMessage('인증 메일을 보냈습니다. 이메일을 확인해 주세요.', 'ok');
+  const button = document.getElementById('login-submit');
+  const toggle = document.getElementById('signup-toggle');
+  doSignup.pending = true;
+  button.disabled = true;
+  toggle.disabled = true;
+  button.classList.add('is-loading');
+  button.setAttribute('aria-busy', 'true');
+  button.textContent = '가입 처리 중…';
+  setAuthMessage('계정을 만들고 인증 메일을 요청하고 있습니다. 잠시만 기다려 주세요.', 'info', '회원가입을 진행하고 있습니다');
+  try{
+    const { data, error } = await supabaseClient.auth.signUp({
+      email, password, options:{ emailRedirectTo: window.location.origin }
+    });
+    if(error) throw error;
+    if(data.session){
+      setAuthMessage('회원가입과 로그인이 완료되었습니다.', 'ok');
+    }else{
+      setAuthMessage('');
+      await showAuthResult('인증 메일을 보냈습니다', email + '\n\n이메일의 인증 링크를 눌러 가입을 완료해 주세요.\n메일이 보이지 않으면 스팸함도 확인해 주세요.');
+    }
+  }catch(error){
+    setAuthMessage(error.message || '회원가입 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+  }finally{
+    doSignup.pending = false;
+    button.disabled = false;
+    toggle.disabled = false;
+    button.classList.remove('is-loading');
+    button.removeAttribute('aria-busy');
+    button.textContent = '회원가입';
   }
 }
 
 async function requestPasswordReset(){
   const inApp = document.getElementById('app').style.display === 'flex';
-  const report = (message, ok=false)=>{
-    if(!inApp) return setAuthMessage(message, ok ? 'ok' : '');
-    const el = document.getElementById('account-auth-status');
-    el.textContent = message;
-    el.style.color = ok ? 'var(--teal)' : 'var(--red)';
+  const report = (message, type='', title='')=>{
+    const el = document.getElementById(inApp ? 'account-auth-status' : 'login-err');
+    renderAuthNotice(el, message, type, title);
   };
   const email = inApp ? document.getElementById('account-email').textContent.trim()
     : document.getElementById('login-email').value.trim();
@@ -1071,13 +1180,14 @@ async function requestPasswordReset(){
   if(!supabaseClient) return report('인증 서비스를 준비 중입니다. 잠시 후 다시 시도하세요.');
   if(requestPasswordReset.pending) return;
   requestPasswordReset.pending = true;
-  report('재설정 메일을 전송하고 있습니다…', true);
+  report('잠시만 기다려 주세요.', 'info', '재설정 메일을 전송하고 있습니다…');
   try{
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + '/?type=recovery'
     });
     if(error) throw error;
-    report('비밀번호 재설정 메일을 전송했습니다. 이메일과 스팸함을 확인하세요.', true);
+    report('');
+    await showAuthResult('비밀번호 재설정 메일을 보냈습니다', email + '\n\n이메일의 재설정 링크를 눌러 새 비밀번호를 설정해 주세요.\n메일이 보이지 않으면 스팸함도 확인해 주세요.');
   }catch(error){
     const message = error.message || '';
     if(error.code === 'over_email_send_rate_limit' || /email rate limit/i.test(message)){
@@ -1107,11 +1217,10 @@ async function updatePassword(){
   const { error } = await supabaseClient.auth.updateUser({ password });
   if(error) return setAuthMessage(error.message);
   history.replaceState({}, document.title, window.location.pathname);
-  setAuthMessage('비밀번호가 변경되었습니다.', 'ok');
-  setTimeout(async ()=>{
-    const { data:{ user } } = await supabaseClient.auth.getUser();
-    if(user) await showAuthenticatedApp(user);
-  }, 600);
+  setAuthMessage('');
+  await showAuthResult('비밀번호가 변경되었습니다', '이제 새 비밀번호로 로그인할 수 있습니다.\n확인을 누르면 대시보드로 이동합니다.');
+  const { data:{ user } } = await supabaseClient.auth.getUser();
+  if(user) await showAuthenticatedApp(user);
 }
 
 function togglePw(){
@@ -1122,10 +1231,12 @@ function togglePw(){
 }
 
 function toggleSignup(){
+  if(doSignup.pending || doLogin.pending) return;
   const wrap = document.getElementById('signup-confirm-wrap');
   const button = document.getElementById('login-submit');
   const toggle = document.getElementById('signup-toggle');
   const isSignup = wrap.style.display !== 'none';
+  document.getElementById('auth-title').textContent = isSignup ? '로그인' : '회원가입';
   wrap.style.display = isSignup ? 'none' : 'block';
   button.textContent = isSignup ? '로그인' : '회원가입';
   button.onclick = isSignup ? doLogin : doSignup;
@@ -3381,7 +3492,7 @@ window.addEventListener('load', function(){
   <div id="login-card" style="background:#fff;border-radius:14px;padding:32px 36px;
     width:340px;box-shadow:0 16px 48px rgba(0,0,0,0.35);">
 
-    <div style="font-size:16px;font-weight:700;color:#18283C;
+    <div id="auth-title" style="font-size:16px;font-weight:700;color:#18283C;
       margin-bottom:8px;text-align:center;">로그인</div>
     <!-- <div style="font-size:11px;color:#6B7C93;margin-bottom:22px;text-align:center;">
       이메일 계정으로 안전하게 이용하세요</div> -->
@@ -3422,8 +3533,7 @@ window.addEventListener('load', function(){
     </div>
     </div>
 
-    <div id="login-err" style="color:#C0392B;font-size:11.5px;
-      margin-bottom:10px;min-height:16px;text-align:center;"></div>
+    <div id="login-err" class="auth-notice" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
     <button onclick="doLogin()"
       id="login-submit"
