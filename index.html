@@ -52,12 +52,25 @@ body{font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-seri
 .nav-item.active{background:rgba(232,148,58,0.15);
   border-left-color:var(--accent);color:var(--white);font-weight:700;}
 .nav-icon{font-size:14px;width:16px;text-align:center;}
+.premium-mark{margin-left:auto;padding:2px 5px;border-radius:8px;background:rgba(232,148,58,.24);
+  color:var(--accent2);font-size:8px;font-weight:800;letter-spacing:.3px;}
 .nav-bottom{margin-top:auto;padding-bottom:14px;}
 
 /* ══════════════════════════════════════════
    공통 컴포넌트
 ══════════════════════════════════════════ */
 .section{display:none;}.section.active{display:block;}
+#sec-report{position:relative;min-height:calc(100vh - 90px);}
+.premium-lock{position:absolute;inset:0;z-index:20;display:flex;justify-content:center;
+  align-items:flex-start;padding:92px 20px;background:rgba(244,248,251,.74);
+  backdrop-filter:blur(2px);cursor:not-allowed;}
+.premium-lock[hidden]{display:none;}
+.premium-lock-card{width:min(390px,100%);padding:28px 30px;border:1px solid #E7C68D;
+  border-radius:12px;background:rgba(255,255,255,.97);box-shadow:0 12px 32px rgba(30,58,95,.18);
+  text-align:center;color:var(--navy);}
+.premium-lock-icon{font-size:29px;margin-bottom:9px;}
+.premium-lock-card h3{font-size:16px;margin-bottom:8px;}
+.premium-lock-card p{font-size:12px;line-height:1.65;color:var(--gray);}
 .card{background:var(--white);border-radius:10px;border:1px solid var(--border);
   box-shadow:0 2px 8px var(--shadow);margin-bottom:18px;}
 .card-header{padding:12px 18px;border-bottom:1px solid var(--border);
@@ -279,7 +292,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
     <div class="nav-item" data-sec="output" onclick="nav(this)">
       <span class="nav-icon">📋</span>회계장부 출력</div>
     <div class="nav-item" data-sec="report" onclick="nav(this)">
-      <span class="nav-icon">📑</span>회계보고서</div>
+      <span class="nav-icon">📑</span>회계보고서 <span class="premium-mark">PREMIUM</span></div>
     <div class="nav-item" data-sec="bill" onclick="nav(this)">
       <span class="nav-icon">📋</span>청구서</div>
     <div class="nav-item" data-sec="income-res" onclick="nav(this)">
@@ -553,6 +566,13 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
         </div>
         <div class="card-body" id="rpt-body">
           <div class="info-box">[보고서 생성] 버튼을 클릭하면 자동으로 작성됩니다.</div>
+        </div>
+      </div>
+      <div class="premium-lock" id="report-premium-lock" hidden role="alert" aria-live="polite">
+        <div class="premium-lock-card">
+          <div class="premium-lock-icon" aria-hidden="true">🔒</div>
+          <h3>이 페이지는 프리미엄 회원 전용입니다.</h3>
+          <p>예산과 수입·지출을 한눈에 정리한<br>회계보고서는 프리미엄 회원에게 제공됩니다.</p>
         </div>
       </div>
     </div>
@@ -872,6 +892,16 @@ function isPaidMember(){
   return paidPlan && availableStatus && (!expiresAt || expiresAt > new Date());
 }
 
+function isPremiumMember(){
+  return accountProfile.plan === 'premium' && isPaidMember();
+}
+
+function updatePremiumReportLock(){
+  const lock = document.getElementById('report-premium-lock');
+  if(!lock) return;
+  lock.hidden = isPremiumMember();
+}
+
 function updateAccountPlanUI(){
   const el = document.getElementById('account-plan');
   if(!el) return;
@@ -882,6 +912,7 @@ function updateAccountPlanUI(){
   el.style.display = 'inline-block';
   el.style.background = paid ? '#E6F6F1' : '#EEF2F7';
   el.style.color = paid ? '#16836D' : '#607086';
+  updatePremiumReportLock();
 }
 
 async function loadAccountProfile(userId){
@@ -1231,6 +1262,7 @@ function nav(el){
   if(id==='bill')       { renderBill(); loadBillList(); }
   if(id==='income-res') renderResolution('ir');
   if(id==='expense-res'){ renderResolution('er'); initErSubjectSel(); }
+  if(id==='report') updatePremiumReportLock();
 }
 
 // ════════════════════════════════════════════
