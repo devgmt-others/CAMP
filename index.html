@@ -421,6 +421,12 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
               <p style="margin-top:8px;font-size:12px;line-height:1.7;color:var(--gray);">무료 기능에 더해 연간 예산·수입·지출을 정리한 회계보고서를 이용할 수 있습니다.</p>
             </div>
           </div>
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+            <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:5px;">토스페이먼츠 테스트</div>
+            <p style="font-size:11px;line-height:1.65;color:var(--gray);margin-bottom:10px;">테스트 금액 1,000원으로 결제창의 흐름만 확인합니다. 이 단계에서는 유료회원으로 변경되지 않습니다.</p>
+            <button type="button" id="toss-test-pay-button" class="btn btn-accent" onclick="beginTossTestPayment()">💳 테스트 결제하기</button>
+            <div id="toss-payment-help" role="status" aria-live="polite" style="margin-top:8px;font-size:11px;line-height:1.6;color:var(--gray);"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -753,6 +759,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 </div><!-- /app -->
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://js.tosspayments.com/v2/standard"></script>
 <script>
 'use strict';
 // 회계 데이터는 로그인 계정별로 분리합니다. 기존 공용 데이터는 자동으로 가져오지 않습니다.
@@ -1013,6 +1020,93 @@ function renderPayment(){
     detail.textContent = '기본 회계 기능을 이용하고 있습니다.';
     badge.textContent = '무료 이용 중';
     badge.className = 'badge badge-blue';
+  }
+}
+
+const TOSS_TEST_AMOUNT = 1000;
+const TOSS_TEST_ORDER_NAME = 'CAMP 유료회원 테스트';
+let tossClientKey = null;
+
+function setTossPaymentHelp(message, isError=false){
+  const el = document.getElementById('toss-payment-help');
+  if(!el) return;
+  el.textContent = message;
+  el.style.color = isError ? 'var(--red)' : 'var(--gray)';
+}
+
+async function loadTossClientKey(){
+  if(tossClientKey) return tossClientKey;
+  const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+  const res = await fetch(isLocal ? './toss-public-config.json' : '/api/toss-config', { cache:'no-store' });
+  const config = await res.json().catch(()=>({}));
+  if(!res.ok || !config.clientKey){
+    throw new Error(config.error || (isLocal
+      ? 'toss-public-config.json에 토스 테스트 클라이언트 키를 입력해 주세요.'
+      : 'Vercel의 TOSS_WIDGET_CLIENT_KEY 환경변수를 설정해 주세요.'));
+  }
+  tossClientKey = config.clientKey;
+  return tossClientKey;
+}
+
+function createTossTestOrderId(){
+  const random = window.crypto?.randomUUID
+    ? window.crypto.randomUUID().replace(/-/g, '')
+    : Date.now().toString(36) + Math.random().toString(36).slice(2);
+  return 'camp-test-' + random;
+}
+
+async function beginTossTestPayment(){
+  const button = document.getElementById('toss-test-pay-button');
+  if(!button) return;
+  if(!window.TossPayments){
+    setTossPaymentHelp('토스페이먼츠 SDK를 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.', true);
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = '결제창 준비 중…';
+  setTossPaymentHelp('토스페이먼츠 테스트 결제창을 준비하고 있습니다.');
+  try{
+    const clientKey = await loadTossClientKey();
+    const tossPayments = window.TossPayments(clientKey);
+    const widgets = tossPayments.widgets({ customerKey: activeAccountId || 'ANONYMOUS' });
+    await widgets.setAmount({ currency: 'KRW', value: TOSS_TEST_AMOUNT });
+    const paymentWindow = await widgets.renderPaymentWindow({ orderName: TOSS_TEST_ORDER_NAME });
+    paymentWindow.on('paymentRequest', async function(){
+      await widgets.requestPayment({
+        orderId: createTossTestOrderId(),
+        orderName: TOSS_TEST_ORDER_NAME,
+        successUrl: window.location.origin + window.location.pathname + '?toss_test_result=success',
+        failUrl: window.location.origin + window.location.pathname + '?toss_test_result=fail'
+      });
+    });
+    paymentWindow.on('cancel', function(){
+      button.disabled = false;
+      button.textContent = '💳 테스트 결제하기';
+      setTossPaymentHelp('결제창을 닫았습니다.');
+    });
+    setTossPaymentHelp('결제수단을 선택해 테스트 결제창을 확인해 보세요.');
+  }catch(error){
+    console.error('토스페이먼츠 테스트 결제창 오류:', error);
+    setTossPaymentHelp(error.message || '결제창을 준비하지 못했습니다.', true);
+    button.disabled = false;
+    button.textContent = '💳 테스트 결제하기';
+  }
+}
+
+function showTossTestResult(){
+  const url = new URL(window.location.href);
+  const result = url.searchParams.get('toss_test_result');
+  if(!result) return;
+  url.searchParams.delete('toss_test_result');
+  url.searchParams.delete('paymentKey');
+  url.searchParams.delete('orderId');
+  url.searchParams.delete('amount');
+  window.history.replaceState({}, '', url);
+  if(result === 'success'){
+    toast('결제 인증 화면을 확인했습니다. 아직 결제 승인 및 유료회원 전환은 하지 않았습니다.');
+  }else{
+    toast('테스트 결제가 취소되었거나 실패했습니다.', 'err');
   }
 }
 
@@ -3525,6 +3619,7 @@ async function initApp(){
   var erM = document.getElementById('er-month');
   if(erM) erM.value = cur;
   renderDashboard();
+  showTossTestResult();
   if(!s.church) setTimeout(function(){
     toast('[초기설정]에서 교회 정보를 먼저 입력해 주세요.','err');
   }, 700);
