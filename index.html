@@ -422,10 +422,19 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
             </div>
           </div>
           <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
-            <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:5px;">토스페이먼츠 테스트</div>
-            <p style="font-size:11px;line-height:1.65;color:var(--gray);margin-bottom:10px;">테스트 금액 1,000원으로 결제창의 흐름만 확인합니다. 이 단계에서는 유료회원으로 변경되지 않습니다.</p>
-            <button type="button" id="toss-test-pay-button" class="btn btn-accent" onclick="beginTossTestPayment()">💳 테스트 결제하기</button>
+            <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:5px;">결제수단 비교 테스트</div>
+            <p style="font-size:11px;line-height:1.65;color:var(--gray);margin-bottom:10px;">두 결제창 모두 테스트 금액 1,000원으로 흐름만 확인합니다. 이 단계에서는 실제 결제 승인 및 유료회원 전환을 하지 않습니다.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" id="toss-test-pay-button" class="btn btn-accent" onclick="beginTossTestPayment()">💳 토스페이먼츠 테스트</button>
+              <button type="button" id="portone-test-pay-button" class="btn btn-outline" onclick="beginPortOneTestPayment()">💳 포트원 테스트</button>
+            </div>
             <div id="toss-payment-help" role="status" aria-live="polite" style="margin-top:8px;font-size:11px;line-height:1.6;color:var(--gray);"></div>
+            <div id="portone-customer-fields" class="form-grid" style="margin-top:12px;max-width:520px;">
+              <div class="fg"><label for="portone-customer-name">포트원 테스트 구매자 이름</label><input id="portone-customer-name" type="text" autocomplete="name" placeholder="예: 홍길동"></div>
+              <div class="fg"><label for="portone-customer-phone">포트원 테스트 휴대폰 번호</label><input id="portone-customer-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="예: 010-1234-5678"></div>
+            </div>
+            <div style="margin-top:5px;font-size:11px;line-height:1.6;color:var(--gray);">로그인 이메일과 위 정보는 KG이니시스 테스트 결제 요청에만 전달하며, 이 프로그램에 저장하지 않습니다.</div>
+            <div id="portone-payment-help" role="status" aria-live="polite" style="margin-top:5px;font-size:11px;line-height:1.6;color:var(--gray);"></div>
           </div>
         </div>
       </div>
@@ -760,6 +769,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.tosspayments.com/v2/standard"></script>
+<script src="https://cdn.portone.io/v2/browser-sdk.js"></script>
 <script>
 'use strict';
 // 회계 데이터는 로그인 계정별로 분리합니다. 기존 공용 데이터는 자동으로 가져오지 않습니다.
@@ -1108,6 +1118,96 @@ function showTossTestResult(){
   }else{
     toast('테스트 결제가 취소되었거나 실패했습니다.', 'err');
   }
+}
+
+const PORTONE_TEST_AMOUNT = 1000;
+const PORTONE_TEST_ORDER_NAME = 'CAMP 유료회원 테스트';
+let portoneConfig = null;
+
+function setPortOnePaymentHelp(message, isError=false){
+  const el = document.getElementById('portone-payment-help');
+  if(!el) return;
+  el.textContent = message;
+  el.style.color = isError ? 'var(--red)' : 'var(--gray)';
+}
+
+async function loadPortOneConfig(){
+  if(portoneConfig) return portoneConfig;
+  const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+  const res = await fetch(isLocal ? './portone-public-config.json' : '/api/portone-config', { cache:'no-store' });
+  const config = await res.json().catch(()=>({}));
+  if(!res.ok || !config.storeId || !config.channelKey){
+    throw new Error(config.error || (isLocal
+      ? 'portone-public-config.json에 포트원 테스트 Store ID와 채널 키를 입력해 주세요.'
+      : 'Vercel의 PORTONE_STORE_ID와 PORTONE_CHANNEL_KEY 환경변수를 설정해 주세요.'));
+  }
+  portoneConfig = config;
+  return portoneConfig;
+}
+
+function createPortOneTestPaymentId(){
+  const random = window.crypto?.randomUUID
+    ? window.crypto.randomUUID().replace(/-/g, '')
+    : Date.now().toString(36) + Math.random().toString(36).slice(2);
+  // KG이니시스 paymentId는 40자 이하여야 합니다. (camp- + UUID 32자 = 37자)
+  return 'camp-' + random;
+}
+
+async function beginPortOneTestPayment(){
+  const button = document.getElementById('portone-test-pay-button');
+  if(!button) return;
+  if(!window.PortOne){
+    setPortOnePaymentHelp('포트원 SDK를 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.', true);
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = '결제창 준비 중…';
+  setPortOnePaymentHelp('포트원 테스트 결제창을 준비하고 있습니다.');
+  try{
+    const config = await loadPortOneConfig();
+    const fullName = document.getElementById('portone-customer-name')?.value.trim();
+    const phoneNumber = document.getElementById('portone-customer-phone')?.value.replace(/[^0-9]/g, '');
+    const email = document.getElementById('account-email')?.textContent.trim();
+    if(!fullName || !phoneNumber || !email){
+      throw new Error('KG이니시스 테스트를 위해 구매자 이름과 휴대폰 번호를 입력해 주세요.');
+    }
+    const paymentId = createPortOneTestPaymentId();
+    const redirectUrl = window.location.origin + window.location.pathname + '?portone_test_result=return';
+    const response = await window.PortOne.requestPayment({
+      storeId: config.storeId,
+      channelKey: config.channelKey,
+      paymentId,
+      orderName: PORTONE_TEST_ORDER_NAME,
+      totalAmount: PORTONE_TEST_AMOUNT,
+      currency: 'KRW',
+      payMethod: 'CARD',
+      customer: { fullName, phoneNumber, email },
+      redirectUrl
+    });
+    if(response && response.code !== undefined){
+      throw new Error(response.message || '포트원 결제를 진행하지 못했습니다.');
+    }
+    setPortOnePaymentHelp('결제 인증을 확인했습니다. 아직 결제 승인 및 유료회원 전환은 하지 않았습니다.');
+  }catch(error){
+    console.error('포트원 테스트 결제창 오류:', error);
+    setPortOnePaymentHelp(error.message || '결제창을 준비하지 못했습니다.', true);
+  }finally{
+    button.disabled = false;
+    button.textContent = '💳 포트원 테스트';
+  }
+}
+
+function showPortOneTestResult(){
+  const url = new URL(window.location.href);
+  if(url.searchParams.get('portone_test_result') !== 'return') return;
+  const hasError = url.searchParams.has('code');
+  url.searchParams.delete('portone_test_result');
+  url.searchParams.delete('paymentId');
+  url.searchParams.delete('code');
+  url.searchParams.delete('message');
+  window.history.replaceState({}, '', url);
+  toast(hasError ? '포트원 테스트 결제가 취소되었거나 실패했습니다.' : '포트원 결제 인증 화면을 확인했습니다. 아직 결제 승인 및 유료회원 전환은 하지 않았습니다.', hasError ? 'err' : undefined);
 }
 
 async function loadAccountProfile(userId){
@@ -3620,6 +3720,7 @@ async function initApp(){
   if(erM) erM.value = cur;
   renderDashboard();
   showTossTestResult();
+  showPortOneTestResult();
   if(!s.church) setTimeout(function(){
     toast('[초기설정]에서 교회 정보를 먼저 입력해 주세요.','err');
   }, 700);
