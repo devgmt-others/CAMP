@@ -429,11 +429,6 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
               <button type="button" id="portone-test-pay-button" class="btn btn-outline" onclick="beginPortOneTestPayment()">💳 포트원 테스트</button>
             </div>
             <div id="toss-payment-help" role="status" aria-live="polite" style="margin-top:8px;font-size:11px;line-height:1.6;color:var(--gray);"></div>
-            <div id="portone-customer-fields" class="form-grid" style="margin-top:12px;max-width:520px;">
-              <div class="fg"><label for="portone-customer-name">포트원 테스트 구매자 이름</label><input id="portone-customer-name" type="text" autocomplete="name" placeholder="예: 홍길동"></div>
-              <div class="fg"><label for="portone-customer-phone">포트원 테스트 휴대폰 번호</label><input id="portone-customer-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="예: 010-1234-5678"></div>
-            </div>
-            <div style="margin-top:5px;font-size:11px;line-height:1.6;color:var(--gray);">로그인 이메일과 위 정보는 KG이니시스 테스트 결제 요청에만 전달하며, 이 프로그램에 저장하지 않습니다.</div>
             <div id="portone-payment-help" role="status" aria-live="polite" style="margin-top:5px;font-size:11px;line-height:1.6;color:var(--gray);"></div>
           </div>
         </div>
@@ -1149,8 +1144,8 @@ function createPortOneTestPaymentId(){
   const random = window.crypto?.randomUUID
     ? window.crypto.randomUUID().replace(/-/g, '')
     : Date.now().toString(36) + Math.random().toString(36).slice(2);
-  // KG이니시스 paymentId는 40자 이하여야 합니다. (camp- + UUID 32자 = 37자)
-  return 'camp-' + random;
+  // KPN 결제창의 MxIssueNO는 32바이트, 영문과 숫자만 허용합니다.
+  return 'camp' + random.slice(0, 28);
 }
 
 async function beginPortOneTestPayment(){
@@ -1166,12 +1161,6 @@ async function beginPortOneTestPayment(){
   setPortOnePaymentHelp('포트원 테스트 결제창을 준비하고 있습니다.');
   try{
     const config = await loadPortOneConfig();
-    const fullName = document.getElementById('portone-customer-name')?.value.trim();
-    const phoneNumber = document.getElementById('portone-customer-phone')?.value.replace(/[^0-9]/g, '');
-    const email = document.getElementById('account-email')?.textContent.trim();
-    if(!fullName || !phoneNumber || !email){
-      throw new Error('KG이니시스 테스트를 위해 구매자 이름과 휴대폰 번호를 입력해 주세요.');
-    }
     const paymentId = createPortOneTestPaymentId();
     const redirectUrl = window.location.origin + window.location.pathname + '?portone_test_result=return';
     const response = await window.PortOne.requestPayment({
@@ -1182,7 +1171,6 @@ async function beginPortOneTestPayment(){
       totalAmount: PORTONE_TEST_AMOUNT,
       currency: 'KRW',
       payMethod: 'CARD',
-      customer: { fullName, phoneNumber, email },
       redirectUrl
     });
     if(response && response.code !== undefined){
